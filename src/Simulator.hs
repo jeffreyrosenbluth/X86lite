@@ -11,12 +11,15 @@ module Simulator where
 
 import           X86
 
+import           Data.Bits                   (shiftL, shiftR, (.&.), (.|.))
+import           Data.Char                   (ord)
 import           Data.Int                    (Int64)
 import           Data.STRef                  (STRef)
-import           Data.Vector.Unboxed.Mutable
+import           Data.Text.Lazy              (unpack)
+import           Data.Vector.Unboxed.Mutable (STVector)
 import           Data.Word                   (Word8)
 
--- Simulator machine state
+-- Simulator machine state ----------------------------------------------------
 memBot, memTop, insSize, exitAddr :: Int64
 memBot   = 0x400000 -- lowest valid address
 memTop   = 0x410000 -- one past the last byte in memory
@@ -89,7 +92,7 @@ data Mach s = Mach
   , mem   :: Mem s
   }
 
--- Simulator helper functions
+-- Simulator helper functions -------------------------------------------------
 
 -- | The index of a register in the regs vector
 rind :: Reg -> Int
@@ -111,3 +114,114 @@ rind = \case
   R13 -> 13
   R14 -> 14
   R15 -> 15
+
+-- Helper functions for reading/writing sbyts ---------------------------------
+
+-- | Convert Int64 to its sbyte representation
+sbytesOfInt64 :: Int64 -> [Sbyte]
+sbytesOfInt64 i = f <$> [0, 8, 16, 24, 32, 40, 48, 56]
+  where
+    f = Byte . fromIntegral . (.&. 0xff) . shiftR i
+
+-- | Convert an Sbyte representation to an Int64
+int64OfSbytes :: [Sbyte] -> Int64
+int64OfSbytes = foldr f 0
+  where
+    f b i = case b of
+      Byte c -> shiftL i 8 .|. fromIntegral c
+      _      -> 0
+
+-- | Convert a String to its Sbyte representation.
+sbytesOfString :: String -> [Sbyte]
+sbytesOfString s = go [Byte 0] (length s -1)
+  where
+    go acc i
+      | i <0 = acc
+      | otherwise = go (Byte (fromIntegral . ord $ s !! i) : acc) (pred i)
+
+-- | Serialize an instruction to Sbytes.
+sbytesOfIns :: Ins -> [Sbyte]
+sbytesOfIns ins@(op, args) =
+  if all check  args
+    then [InsB0 ins, InsFrag, InsFrag, InsFrag]
+    else error "sbytesOfIns tried to serialize a label!"
+  where
+    check (Imm (Lbl _))     = False
+    check (Ind1 (Lbl _))    = False
+    check (Ind3 (Lbl _, _)) = False
+    check _                 = True
+
+-- | Serialize a data element to Sbytes.
+sbytesOfData :: Data -> [Sbyte]
+sbytesOfData = \case
+  Quad (Lit i) -> sbytesOfInt64 i
+  Asciz s -> sbytesOfString $ unpack s
+  Quad (Lbl _) -> error "sybytesOfData tried to serialize a label!"
+
+-- | Interpret a condition code with respect ot the given flags.
+interpCnd :: Cnd -> Bool
+interpCnd c = error "interpCnd not implemented"
+
+-- | Maps an X86Liet address into Just haskell list index,
+--   or Nothing if the address is not within the legal address space.
+mapAddr :: Quad -> Maybe Int
+mapAddr q = error "mapAddr not implemented"
+
+-- | Simulates one step of the machine:
+--    * fetch the instruction at %rip
+--    * compute the source and/or destination information from the operands
+--    * simulate the instruction semantics
+--    * update the registers and/or memory appropriately
+--    * set the condition flags
+step :: Mach s -> ()
+step m = error "step not implemented"
+
+-- | Runs the maching until the rip  register reaches a designated memory
+--   address.
+run :: Mach s -> Int64
+run m = undefined
+
+-- assemblin and linking ------------------------------------------------------
+
+-- | A representation of the executable
+data Exec = Exec
+  { entry   :: Quad    -- ^ address of the entry point
+  , textPos :: Quad    -- ^ starting address of the code
+  , dataPos :: Quad    -- ^ starting address of the date
+  , textSeg :: [Sbyte] -- ^ contents of the text segment
+  , dataSeg :: [Sbyte] -- ^ contents of the data segment
+  }
+
+{-  Convert an X86 program into an object file:
+   - separate the text and data segments
+   - compute the size of each segment
+      Note: the size of an Asciz string section is (1 + the string length)
+
+   - resolve the labels to concrete addresses and 'patch' the instructions to
+     replace Lbl values with the corresponding Imm values.
+
+   - the text segment starts at the lowest address
+   - the data segment starts after the text segment
+
+  HINT: List.fold_left and List.fold_right are your friends.
+ -}
+
+assemble :: Prog -> Exec
+assemble = undefined
+
+{- Convert an object file into an executable machine state.
+    - allocate the mem array
+    - set up the memory state by writing the symbolic bytes to the
+      appropriate locations
+    - create the inital register state
+      - initialize rip to the entry point address
+      - initializes rsp to the last word in memory
+      - the other registers are initialized to 0
+    - the condition code flags start as 'false'
+
+  Hint: The Array.make, Array.blit, and Array.of_list library functions
+  may be of use.
+-}
+
+load :: Exec -> Mach s
+load = undefined
