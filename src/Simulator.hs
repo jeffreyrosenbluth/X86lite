@@ -117,6 +117,10 @@ rind = \case
 
 -- Helper functions for reading/writing sbyts ---------------------------------
 
+-- | Convert a Char to an sbyte
+byte :: Char -> Sbyte
+byte = Byte . fromIntegral . ord
+
 -- | Convert Int64 to its sbyte representation
 sbytesOfInt64 :: Int64 -> [Sbyte]
 sbytesOfInt64 i = f <$> [0, 8, 16, 24, 32, 40, 48, 56]
