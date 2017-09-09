@@ -26,9 +26,20 @@ helloworldTextseg =
 
 spec :: Spec
 spec = do
-  describe "dummy test" $
-    it "does nothing" $ do
-      0 `shouldBe` 0
   describe "mapAddr tests" $
-    it "mapAddr1" $ do
+    it "Address" $ do
       mapAddr 0x40FFF8 `shouldBe` Just 65528
+      mapAddr 0x4000FF `shouldBe` Just 255
+      mapAddr 0x400000 `shouldBe` Just 0
+      mapAddr 0x0000000000000000 `shouldBe` Nothing
+      mapAddr 0xFFFFFFFFFFFFFFFD `shouldBe` Nothing
+  describe "interCnd tests" $
+    it "Flags" $ let t = [True, True, True] in do
+      interpCnd False False False <$> [Neq, Gt, Ge] `shouldBe` t
+      interpCnd False False True  <$> [Eq, Le, Ge]  `shouldBe` t
+      interpCnd False True False  <$> [Neq, Le, Lt] `shouldBe` t
+      interpCnd False True True   <$> [Eq, Le, Lt]  `shouldBe` t
+      interpCnd True False False  <$> [Neq, Le, Lt] `shouldBe` t
+      interpCnd True False True   <$> [Eq, Le, Lt]  `shouldBe` t
+      interpCnd True True False   <$> [Neq, Gt, Ge] `shouldBe` t
+      interpCnd True True True    <$> [Eq, Le, Ge]  `shouldBe` t

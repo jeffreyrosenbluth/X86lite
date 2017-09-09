@@ -45,6 +45,7 @@ data Operand
 
 -- | Condition Codes
 data Cnd = Eq | Neq | Gt | Ge | Lt | Le
+  deriving (Eq)
 
 data Opcode
   = Movq  | Pushq | Popq

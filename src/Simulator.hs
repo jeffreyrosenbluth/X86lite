@@ -11,12 +11,15 @@ module Simulator where
 
 import           X86
 
+import           Control.Monad.ST            (ST, runST)
 import           Data.Bits                   (shiftL, shiftR, (.&.), (.|.))
 import           Data.Char                   (ord)
 import           Data.Int                    (Int64)
+import           Data.STRef                  (readSTRef)
 import           Data.STRef                  (STRef)
 import           Data.Text.Lazy              (unpack)
-import           Data.Vector.Unboxed.Mutable (STVector)
+import           Data.Vector.Unboxed.Mutable (MVector)
+import qualified Data.Vector.Unboxed.Mutable as V
 import           Data.Word                   (Word8)
 
 -- Simulator machine state ----------------------------------------------------
@@ -73,7 +76,7 @@ data Sbyte
   | Byte Word8  -- ^ non-instruction byte
 
 -- | Memory maps addresses to symbolic bytes
-type Mem = STVector Int64
+type Mem s = MVector s Int64
 
 -- | Flags for condition codes
 data Flags s = Flags
@@ -83,7 +86,7 @@ data Flags s = Flags
   }
 
 -- | Register Files
-type Regs = STVector Int64
+type Regs s = MVector s Int64
 
 -- | Complete machine state
 data Mach s = Mach
@@ -162,14 +165,71 @@ sbytesOfData = \case
   Asciz s -> sbytesOfString $ unpack s
   Quad (Lbl _) -> error "sybytesOfData tried to serialize a label!"
 
--- | Interpret a condition code with respect ot the given flags.
-interpCnd :: Cnd -> Bool
-interpCnd c = error "interpCnd not implemented"
+-- | Interpret a condition code with respect to the given flags.
+-- interpCnd :: Flags s -> Cnd -> ST s Bool
+-- interpCnd (Flags o s z) cnd = do
+--   o' <- readSTRef o
+--   s' <- readSTRef s
+--   z' <- readSTRef z
+--   pure $ case cnd of
+--     Eq  -> z'
+--     Neq -> not z'
+--     Lt  -> o' /= s'
+--     Le  -> z' || (o' /= s')
+--     Gt  -> not z' && (o' == s')
+--     Ge  -> o' == s'
+interpCnd :: Bool -> Bool -> Bool -> Cnd -> Bool
+interpCnd o s z = \case
+  Eq  -> z
+  Neq -> not z
+  Lt  -> o /= s
+  Le  -> z || (o /= s)
+  Gt  -> not z && (o == s)
+  Ge  -> o == s
 
--- | Maps an X86Liet address into Just haskell list index,
+
+-- | Maps an X86Lite address into Just haskell list index,
 --   or Nothing if the address is not within the legal address space.
 mapAddr :: Quad -> Maybe Int
-mapAddr q = error "mapAddr not implemented"
+mapAddr q
+  | q < memBot  = Nothing
+  | q >= memTop = Nothing
+  | otherwise = Just . fromIntegral $ q - memBot
+
+value :: Mach s -> Operand -> ST s Quad
+value mach = \case
+  Imm (Lit q)  -> pure q
+  Reg r        -> V.read (regs mach) (rind r)
+  Ind1 (Lit q) ->
+    maybe (error "Illegal Address")
+          (V.read (mem mach))
+          (mapAddr q)
+  Ind2 r       -> do
+    v <- value mach (Reg r)
+    value mach (Ind1 (Lit v))
+  Ind3 (i, r)  -> do
+    v <- value mach (Reg r)
+    d <- value mach (Imm i)
+    value mach (Ind1 (Lit (v + d)))
+  _            -> error "Cannot extract the value from a Label"
+
+store :: Mach s -> Quad -> Operand -> ST s ()
+store mach i = \case
+  Imm _ -> error "Cannot store a value in an Immediate Operand"
+  Reg r -> V.write (regs mach) (rind r) i
+  Ind1 (Lit q) ->
+    maybe (error "Illegal Address")
+          (\q' -> V.write (mem mach) q' i)
+          (mapAddr q)
+  Ind2 r       -> do
+    v <- value mach (Reg r)
+    store mach i (Ind1 (Lit v))
+  Ind3 (q, r)  -> do
+    v <- value mach (Reg r)
+    d <- value mach (Imm q)
+    store mach i (Ind1 (Lit (v + d)))
+  _            -> error "Cannot store a value in a Label"
+
 
 -- | Simulates one step of the machine:
 --    * fetch the instruction at %rip
